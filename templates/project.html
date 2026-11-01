@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · BB Tool{% endblock %}
+
+{% block content %}
+<div id="project-root" data-project-id="{{ project.id }}">
+
+  <a class="back" href="{{ url_for('index') }}">← All projects</a>
+
+  <header class="topbar">
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div>
+        <h1>{{ project.name }}</h1>
+        <p class="muted">
+          {% if project.platform %}<span class="chip">{{ project.platform }}</span>{% endif %}
+          {% if project.program_url %}
+            <a href="{{ project.program_url }}" target="_blank" rel="noopener">{{ project.program_url }}</a>
+          {% endif %}
+        </p>
+      </div>
+      
+      <div id="cron-status-badge" class="hidden" style="margin-top:-12px;">
+        <span class="chip" style="background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3); color:#34d399;">
+          ⏰ Cron Active
+        </span>
+      </div>
+    </div>
+    
+    <div style="display:flex; gap:10px;">
+      <button class="btn danger hidden" id="cron-delete-btn">🛑 Delete Schedule</button>
+      <button class="btn" id="cron-config-btn">⚙️ Configure Cron</button>
+    </div>
+  </header>
+
+  <section class="panel">
+    <h2>Scope</h2>
+    {% if project.scope %}
+      <ul class="scope-list">
+        {% for s in project.scope %}<li><code>{{ s }}</code></li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No in-scope targets defined yet.</p>
+    {% endif %}
+  </section>
+
+  <!-- ── Subdomain discovery ─────────────────────────── -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Subdomains <span class="counter" id="sub-count"></span></h2>
+      <button class="btn primary" id="discover-btn">🔍 Discover subdomains</button>
+    </div>
+
+    <div class="tool-select" id="tool-select">
+      <div class="tool-select-head">
+        <span class="small muted">Modules to run:</span>
+        <button type="button" class="btn small" id="tools-all-btn">Select all</button>
+        <button type="button" class="btn small" id="tools-none-btn">Clear</button>
+      </div>
+      <div class="tool-checkboxes" id="tool-checkboxes"></div>
+    </div>
+
+    <p class="small" id="discovery-status"></p>
+
+    <div class="filter-bar hidden" id="filter-bar">
+      <span class="small muted">Filter by source:</span>
+      <div class="filter-chips" id="filter-chips"></div>
+    </div>
+
+    <div class="subdomain-toolbar hidden" id="subdomain-toolbar">
+      <label class="tool-cb">
+        <input type="checkbox" id="select-all-cb">
+        <span>Select all visible</span>
+      </label>
+      <span class="small muted" id="sel-count"></span>
+      <div class="toolbar-right ml-auto">
+        <button type="button" class="btn small danger hidden" id="delete-sel-btn">🗑 Delete selected</button>
+        <button type="button" class="btn small danger" id="delete-all-btn">🗑 Delete all</button>
+      </div>
+    </div>
+
+    <p class="small muted hidden" id="subdomain-empty">No subdomains discovered yet.</p>
+    <p class="small muted hidden" id="subdomain-filtered-empty">No subdomains match the selected filters.</p>
+    <ul class="subdomain-list" id="subdomain-list"></ul>
+  </section>
+
+  <!-- ── DNS resolution ──────────────────────────────── -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>DNS Resolution <span class="counter" id="resolved-count"></span></h2>
+      <button class="btn primary" id="dns-resolve-btn">🌐 DNS Resolve all subdomains</button>
+    </div>
+
+    <p class="small muted" id="resolver-info"></p>
+    <p class="small" id="dns-status"></p>
+
+    <div class="subdomain-toolbar hidden" id="resolved-toolbar">
+      <label class="tool-cb">
+        <input type="checkbox" id="dns-select-all-cb">
+        <span>Select all</span>
+      </label>
+      <span class="small muted" id="dns-sel-count"></span>
+      <div class="toolbar-right ml-auto">
+        <button type="button" class="btn small danger hidden" id="dns-delete-sel-btn">🗑 Delete selected</button>
+        <button type="button" class="btn small danger" id="dns-delete-all-btn">🗑 Delete all</button>
+      </div>
+    </div>
+
+    <p class="small muted hidden" id="resolved-empty">No DNS records yet — run DNS resolution.</p>
+    <ul class="subdomain-list resolved-list" id="resolved-list"></ul>
+  </section>
+
+  <!-- ── HTTP Discovery ──────────────────────────────── -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>HTTP Discovery <span class="counter" id="httpx-count"></span></h2>
+      <button class="btn primary" id="httpx-btn">🌐 HTTP Probe all resolved</button>
+    </div>
+
+    <p class="small muted" id="prober-info"></p>
+    <p class="small" id="httpx-status"></p>
+
+    <div class="filter-bar" id="httpx-filter-bar">
+      <select id="httpx-date-select" class="filter-select">
+        <option value="">All dates</option>
+      </select>
+
+      <select id="httpx-domain-select" class="filter-select">
+        <option value="">All domains</option>
+        {% set ns = namespace(seen=[]) %}
+        {% for s in project.scope %}
+          {% set clean_s = s.replace('*.', '').replace('http://', '').replace('https://', '').strip('/').split(':')[0] %}
+          {% if clean_s and clean_s not in ns.seen %}
+            {% set ns.seen = ns.seen + [clean_s] %}
+            <option value="{{ clean_s }}">{{ clean_s }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+      
+      <select id="httpx-status-select" class="filter-select">
+        <option value="">Any status</option>
+        <option value="2xx">2xx</option>
+        <option value="3xx">3xx</option>
+        <option value="4xx">4xx</option>
+        <option value="5xx">5xx</option>
+      </select>
+      
+      <input type="text" id="httpx-title-filter" class="filter-input" placeholder="Filter by title..." list="httpx-title-list">
+      <datalist id="httpx-title-list"></datalist>
+
+      <input type="text" id="httpx-tech-filter" class="filter-input" placeholder="Filter by tech..." list="httpx-tech-list">
+      <datalist id="httpx-tech-list"></datalist>
+
+      <input type="search" id="httpx-search" class="filter-input search-input" placeholder="Search host, ip, server...">
+      
+      <button type="button" class="btn small" id="httpx-clear-filters-btn">✕ Clear Filters</button>
+
+      <div class="toolbar-right ml-auto">
+        <button type="button" class="btn small primary" id="httpx-crawl-btn">✈️ Send to Crawl</button>
+        <button type="button" class="btn small danger" id="httpx-delete-all-btn">🗑 Delete all</button>
+      </div>
+    </div>
+
+    <p class="small muted hidden" id="httpx-empty">No HTTP results yet — run HTTP discovery.</p>
+    
+    <div class="table-container">
+      <table class="data-table hidden" id="httpx-table">
+        <thead>
+          <tr>
+            <th style="width: 30px;"><input type="checkbox" id="httpx-select-all-cb"></th>
+            <th>host</th>
+            <th>status</th>
+            <th>title</th>
+            <th>tech</th>
+            <th>server</th>
+            <th>ip</th>
+            <th>cname</th>
+          </tr>
+        </thead>
+        <tbody id="httpx-tbody">
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── HTTP Changes Log ────────────────────────────── -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>HTTP Changes Log <span class="counter" id="httpx-changes-count"></span></h2>
+      <button class="btn small danger" id="httpx-changes-clear-btn">🗑 Clear log</button>
+    </div>
+    <p class="small muted hidden" id="httpx-changes-empty">No changes recorded yet.</p>
+    <ul class="subdomain-list" id="httpx-changes-list"></ul>
+  </section>
+
+  <!-- ── Crawl Section ────────────────────────────── -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Crawl <span class="counter" id="crawl-count"></span></h2>
+    </div>
+
+    <p class="small" id="crawl-status"></p>
+
+    <div class="filter-bar" id="crawl-filter-bar">
+      <select id="crawl-domain-select" class="filter-select">
+        <option value="">All domains</option>
+      </select>
+      
+      <select id="crawl-ext-select" class="filter-select">
+        <option value="">All extensions</option>
+      </select>
+
+      <input type="search" id="crawl-search" class="filter-input search-input" placeholder="Search in URLs...">
+      
+      <button type="button" class="btn small" id="crawl-clear-filters-btn">✕ Clear Filters</button>
+
+      <div class="toolbar-right ml-auto">
+        <button type="button" class="btn small primary" id="crawl-send-params-btn" disabled>🔍 Send to Params</button>
+        <button type="button" class="btn small danger" id="crawl-delete-all-btn">🗑 Delete all</button>
+      </div>
+    </div>
+
+    <div class="subdomain-toolbar hidden" id="crawl-toolbar">
+      <label class="tool-cb">
+        <input type="checkbox" id="crawl-select-all-cb">
+        <span>Select all visible</span>
+      </label>
+      <span class="small muted" id="crawl-sel-count"></span>
+      <div class="toolbar-right ml-auto">
+        <button type="button" class="btn small danger hidden" id="crawl-delete-sel-btn">🗑 Delete selected</button>
+      </div>
+    </div>
+
+    <p class="small muted hidden" id="crawl-empty">No URLs crawled yet — send some from HTTP Discovery.</p>
+    
+    <div class="table-container">
+      <table class="data-table hidden" id="crawl-table">
+        <thead>
+          <tr>
+            <th style="width: 30px;"><input type="checkbox" id="crawl-select-all-cb-tbody"></th>
+            <th>URL</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody id="crawl-tbody">
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Parameter Discovery Section ────────────────────────────── -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Parameter Discovery <span class="counter" id="params-count"></span></h2>
+    </div>
+
+    <p class="small" id="params-status"></p>
+
+    <div class="filter-bar" id="params-filter-bar">
+      <input type="search" id="params-search" class="filter-input search-input" placeholder="Search parameters...">
+      
+      <div style="display: flex; gap: 8px; margin-left: auto; align-items: center;">
+        <input type="text" id="params-add-input" class="filter-input" placeholder="Add custom word..." style="min-width: 200px;">
+        <button type="button" class="btn small primary" id="params-add-btn">+ Add</button>
+        <button type="button" class="btn small" id="params-sort-btn">Sort: A-Z</button>
+      </div>
+    </div>
+
+    <div class="subdomain-toolbar hidden" id="params-toolbar">
+      <label class="tool-cb">
+        <input type="checkbox" id="params-select-all-cb">
+        <span>Select all visible</span>
+      </label>
+      <span class="small muted" id="params-sel-count"></span>
+      <div class="toolbar-right ml-auto">
+        <button type="button" class="btn small danger hidden" id="params-delete-sel-btn">🗑 Delete selected</button>
+        <button type="button" class="btn small danger" id="params-delete-all-btn">🗑 Delete all</button>
+      </div>
+    </div>
+
+    <p class="small muted hidden" id="params-empty">No parameters discovered yet — select URLs from Crawl and run Parameter Discovery.</p>
+    <ul class="subdomain-list" id="params-list" style="max-height: 400px; overflow-y: auto;"></ul>
+  </section>
+
+  <section class="panel">
+    <h2>Notes</h2>
+    <p class="pre">{{ project.notes or "—" }}</p>
+  </section>
+
+  <section class="panel">
+    <h2>Findings</h2>
+    <p class="muted">Scanner results (XSS, SQLi, open redirect) will land here in the next step.</p>
+  </section>
+
+  <p class="small muted">
+    Created {{ project.created_at[:19] if project.created_at else "—" }} ·
+    Updated {{ project.updated_at[:19] if project.updated_at else "—" }}
+  </p>
+</div>
+
+<!-- Cron Config Modal -->
+<div id="cron-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h2>Configure Automation Pipeline</h2>
+    <p class="small muted" style="margin-bottom:20px;">
+      Automatically run Discovery → DNS Resolution → HTTP Probing on a schedule.
+    </p>
+    
+    <form id="cron-form">
+      <label style="display:flex; align-items:center; gap:10px; margin-bottom:20px; cursor:pointer;">
+        <input type="checkbox" id="cron-enabled" style="width:20px; height:20px;">
+        <span style="font-size:15px; font-weight:600; color:var(--text);">Enable Automated Pipeline</span>
+      </label>
+
+      <div id="cron-options" style="opacity:0.5; pointer-events:none; transition:all 0.2s;">
+        <label>Run Frequency
+          <select id="cron-interval">
+            <option value="6h">Every 6 Hours</option>
+            <option value="12h">Every 12 Hours</option>
+            <option value="daily" selected>Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </label>
+
+        <label style="margin-top:16px;">Subdomain Discovery Modules</label>
+        <div class="tool-checkboxes" id="cron-tools-box" style="margin-top:8px; padding:12px; background:var(--bg); border-radius:6px; border:1px solid var(--border);">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="actions" style="margin-top:24px;">
+        <button type="button" class="btn" id="cron-cancel-btn">Cancel</button>
+        <button type="submit" class="btn primary" id="cron-save-btn">Save Configuration</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Crawl Options Modal -->
+<div id="crawl-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h2>Crawl Options</h2>
+    <p class="small muted" style="margin-bottom:20px;">
+      Configure Katana crawling parameters for the selected URLs.
+    </p>
+    
+    <form id="crawl-form">
+      <div class="row">
+        <label>Depth (-d)
+          <input type="number" id="crawl-depth" value="3" min="1">
+        </label>
+        <label>Concurrency (-c)
+          <input type="number" id="crawl-concurrency" value="5" min="1">
+        </label>
+      </div>
+      
+      <label>Rate Limit (-rl) <span class="muted">(requests per second)</span>
+        <input type="number" id="crawl-ratelimit" value="30" min="1">
+      </label>
+
+      <label>Custom Headers <span class="muted">(One per line, e.g. Authorization: Bearer ...)</span>
+        <textarea id="crawl-headers" rows="3" placeholder="Authorization: Bearer token&#10;X-Custom-Header: Value"></textarea>
+      </label>
+
+      <div class="actions" style="margin-top:24px;">
+        <button type="button" class="btn" id="crawl-cancel-btn">Cancel</button>
+        <button type="submit" class="btn primary" id="crawl-start-btn">Start Crawl</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script id="cron-data" type="application/json">
+  {
+    "enabled": {{ project.cron_enabled|tojson }},
+    "interval": {{ project.cron_interval|default('daily')|tojson }},
+    "tools": {{ project.cron_tools|default([], true)|tojson }}
+  }
+</script>
+<script src="{{ url_for('static', filename='project.js') }}"></script>
+{% endblock %}

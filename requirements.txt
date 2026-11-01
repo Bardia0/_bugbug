@@ -1,0 +1,14 @@
+# --- Web framework ---
+Flask==3.0.3
+
+# --- MongoDB driver (bundles `bson`, do NOT add bson separately) ---
+pymongo==4.8.0
+
+# pymongo needs dnspython for mongodb+srv:// URIs (Atlas, etc.)
+dnspython==2.6.1
+
+# --- HTTP client (used by the abuseipdb + crtsh tools) ---
+requests==2.32.3
+
+# --- Public-suffix handling (used by wayback + gau url extraction) ---
+tldextract==5.1.2

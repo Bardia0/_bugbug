@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Projects · BB Tool{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <h1>Projects</h1>
+    <p class="muted">Your bug bounty programs</p>
+  </div>
+  <button class="btn primary" id="new-project-btn">+ New project</button>
+</header>
+
+{% if projects %}
+<div class="grid">
+  {% for p in projects %}
+  <article class="card">
+    <a class="card-link" href="{{ url_for('project_page', pid=p.id) }}"
+       aria-label="Open {{ p.name }}"></a>
+
+    <div class="card-head">
+      <h3 class="card-title">{{ p.name }}</h3>
+      {% if p.platform %}<span class="chip">{{ p.platform }}</span>{% endif %}
+    </div>
+
+    <p class="small muted">
+      {{ p.scope|length }} in-scope target{{ '' if p.scope|length == 1 else 's' }}
+      {% if p.created_at %}· {{ p.created_at[:10] }}{% endif %}
+    </p>
+
+    {% if p.program_url %}
+      <p class="small ellipsis">{{ p.program_url }}</p>
+    {% endif %}
+
+    <div class="card-actions">
+      <button class="btn small" data-action="edit" data-id="{{ p.id }}">Edit</button>
+      <button class="btn small danger" data-action="delete" data-id="{{ p.id }}">Delete</button>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  <h2>No projects yet</h2>
+  <p class="muted">Create your first program to start tracking findings.</p>
+  <button class="btn primary" id="new-project-btn-empty">+ New project</button>
+</div>
+{% endif %}
+
+<!-- Modal -->
+<div class="modal-backdrop hidden" id="modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2 id="modal-title">New project</h2>
+    <form id="project-form" novalidate>
+      <input type="hidden" id="f-id">
+
+      <label>Name *
+        <input type="text" id="f-name" autocomplete="off" placeholder="e.g. Acme Corp">
+      </label>
+
+      <div class="row">
+        <label>Platform
+          <select id="f-platform">
+            <option value="">—</option>
+            <option>HackerOne</option>
+            <option>Bugcrowd</option>
+            <option>Intigriti</option>
+            <option>YesWeHack</option>
+            <option>Private</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label>Program URL
+          <input type="url" id="f-url" placeholder="https://hackerone.com/...">
+        </label>
+      </div>
+
+      <label>Scope (one target per line)
+        <textarea id="f-scope" rows="5" placeholder="*.example.com&#10;api.example.com"></textarea>
+      </label>
+
+      <label>Notes
+        <textarea id="f-notes" rows="3" placeholder="Creds, rate limits, out-of-scope paths..."></textarea>
+      </label>
+
+      <p class="error hidden" id="form-error"></p>
+
+      <div class="actions">
+        <button type="button" class="btn" id="cancel-btn">Cancel</button>
+        <button type="submit" class="btn primary" id="save-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="application/json" id="projects-data">{{ projects|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}
